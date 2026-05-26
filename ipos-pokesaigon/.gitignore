@@ -1,0 +1,48 @@
+# =============================================
+# .gitignore — iPOS Pokesaigon
+# =============================================
+
+# AWS credentials — NEVER commit these
+aws.config
+.env
+*.pem
+*.key
+credentials
+
+# Node.js
+node_modules/
+dist/
+build/
+.npm
+
+# Frontend build output
+frontend/dist/
+frontend/node_modules/
+
+# Backend build output
+backend/dist/
+backend/node_modules/
+
+# Lambda deployment package
+*.zip
+function.zip
+
+# AWS SAM build artifacts
+.aws-sam/
+samconfig.toml
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*.suo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# TypeScript
+*.tsbuildinfo

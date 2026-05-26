@@ -1,0 +1,107 @@
+# ==========================================
+# AWS Configuration Template — iPOS Pokesaigon
+# ==========================================
+# HOW TO USE:
+#   1. Copy this file:   cp aws.config.example aws.config
+#   2. Fill in your actual AWS account values below
+#   3. NEVER commit aws.config to git (it is listed in .gitignore)
+# ==========================================
+
+# ------------------------------------------
+# AWS Account & Region
+# ------------------------------------------
+
+# Your AWS region — ap-southeast-1 = Singapore (closest to Vietnam)
+AWS_REGION=ap-southeast-1
+
+# Your 12-digit AWS Account ID
+# Find it: AWS Console > top-right menu > Account
+AWS_ACCOUNT_ID=123456789012
+
+# ------------------------------------------
+# AWS IAM Credentials (for local CLI / deployment)
+# ------------------------------------------
+# Create an IAM user with programmatic access in AWS Console.
+# Go to: IAM > Users > Create user > Attach policies > AdministratorAccess (for dev)
+# Then: Security credentials > Create access key > Application running outside AWS
+
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+
+# ------------------------------------------
+# DynamoDB Configuration
+# ------------------------------------------
+
+# Table name — must match infra/template.yaml Resources.OrdersTable.TableName
+DYNAMODB_TABLE_NAME=PokesaigonOrders
+
+# DynamoDB endpoint:
+#   - Leave EMPTY for production AWS
+#   - Set to http://localhost:8000 for DynamoDB Local (local dev without AWS)
+DYNAMODB_ENDPOINT=
+
+# ------------------------------------------
+# API Gateway Configuration
+# ------------------------------------------
+# After deploying with SAM (see infra/README.md), copy the output ApiUrl here.
+# Format: https://{api-id}.execute-api.{region}.amazonaws.com
+# This value also goes into frontend/.env as VITE_API_BASE_URL
+
+API_BASE_URL=https://your-api-id.execute-api.ap-southeast-1.amazonaws.com
+
+# ------------------------------------------
+# Lambda Configuration
+# ------------------------------------------
+
+# Lambda function name — must match infra/template.yaml Resources.OrderApiFunction
+LAMBDA_FUNCTION_NAME=ipos-order-api-handler
+
+# ------------------------------------------
+# CORS Configuration
+# ------------------------------------------
+# Allowed frontend origin for CORS headers in Lambda responses.
+# Use * for development. For production, set to your frontend domain.
+# Example: https://your-bucket.s3-website-ap-southeast-1.amazonaws.com
+
+CORS_ORIGIN=*
+
+# ------------------------------------------
+# SNS Configuration (Optional — Phase 6)
+# ------------------------------------------
+# Create an SNS topic in AWS Console for kitchen notifications.
+# Steps:
+#   1. AWS Console > SNS > Create topic > Standard > Name: PokesaigonNewOrderTopic
+#   2. Create subscription > Protocol: Email > Enter kitchen email address
+#   3. Confirm subscription in email inbox
+#   4. Copy the Topic ARN below
+# Leave empty to disable SNS — the app works without it.
+
+SNS_NEW_ORDER_TOPIC_ARN=
+
+# Example ARN format:
+# SNS_NEW_ORDER_TOPIC_ARN=arn:aws:sns:ap-southeast-1:123456789012:PokesaigonNewOrderTopic
+
+# ------------------------------------------
+# S3 Configuration (Optional — Phase 7)
+# ------------------------------------------
+# Create an S3 bucket for receipt export (optional feature).
+# Steps:
+#   1. AWS Console > S3 > Create bucket > Name: pokesaigon-receipts-{your-account-id}
+#   2. Block all public access (default — receipts are private)
+#   3. Copy bucket name below
+# Leave empty to disable receipt export.
+
+S3_RECEIPT_BUCKET=
+
+# Example:
+# S3_RECEIPT_BUCKET=pokesaigon-receipts-123456789012
+
+# ------------------------------------------
+# SAM Deployment Settings (used by infra/README.md commands)
+# ------------------------------------------
+
+# S3 bucket for SAM deployment artifacts (SAM will create this)
+SAM_DEPLOY_BUCKET=aws-sam-cli-managed-default-samclisourcebucket
+
+# CloudFormation stack name
+SAM_STACK_NAME=ipos-pokesaigon-stack
