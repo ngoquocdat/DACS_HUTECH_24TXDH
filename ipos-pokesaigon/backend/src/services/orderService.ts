@@ -57,7 +57,7 @@ function calculateItemPrice(item: OrderItem): number {
 }
 
 export const orderService = {
-  async createOrder(request: CreateOrderRequest): Promise<Order> {
+  async createOrder(request: CreateOrderRequest, ownerSub: string): Promise<Order> {
     const now = new Date().toISOString();
     const items: OrderItem[] = request.items.map((raw) => ({
       base: raw.base, protein: raw.protein, toppings: raw.toppings ?? [],
@@ -67,6 +67,7 @@ export const orderService = {
     const totalAmount = items.reduce((sum, item) => sum + calculateItemPrice(item), 0);
     const order: Order = {
       orderId: generateOrderId(),
+      ownerSub,
       tableNumber: request.tableNumber.trim(),
       customerPhone: request.customerPhone.trim(),
       items, status: "PENDING", paymentStatus: "UNPAID",

@@ -26,7 +26,64 @@ Globals:
         DYNAMODB_TABLE_NAME: !Ref OrdersTable
         CORS_ORIGIN: !Ref CorsOrigin
         SNS_NEW_ORDER_TOPIC_ARN: !Ref SnsTopicArn
+        COGNITO_CLIENT_ID: !Ref CognitoAppClient
 Resources:
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub 'pokesaigon-users-${Environment}'
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      UserPoolAddOns:
+        AdvancedSecurityMode: 'OFF'
+  CognitoAppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub 'pokesaigon-web-${Environment}'
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      AllowedOAuthFlowsUserPoolClient: true
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs: [!Sub '${CorsOrigin}/auth/callback']
+      LogoutURLs: [!Ref CorsOrigin]
+      ExplicitAuthFlows: [ALLOW_REFRESH_TOKEN_AUTH]
+      AccessTokenValidity: 60
+      TokenValidityUnits:
+        AccessToken: minutes
+  CognitoUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub 'thesis-pokesaigon-${Environment}-${AWS::AccountId}'
+      UserPoolId: !Ref CognitoUserPool
+  KitchenGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: KITCHEN
+      UserPoolId: !Ref CognitoUserPool
+      Description: Kitchen operators; can change order preparation status
+  CashierGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: CASHIER
+      UserPoolId: !Ref CognitoUserPool
+      Description: Cashiers; can confirm READY order payment
+  ManagerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: MANAGER
+      UserPoolId: !Ref CognitoUserPool
+      Description: Managers; can perform staff functions
   OrdersTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -76,12 +133,28 @@ Resources:
   OrdersApi:
     Type: AWS::Serverless::HttpApi
     Properties:
+      Auth:
+        DefaultAuthorizer: CognitoJwtAuthorizer
+        Authorizers:
+          CognitoJwtAuthorizer:
+            IdentitySource: "$request.header.Authorization"
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}"
+              audience: [!Ref CognitoAppClient]
       CorsConfiguration:
         AllowOrigins: [!Ref CorsOrigin]
         AllowMethods: [GET, POST, PATCH, OPTIONS]
         AllowHeaders: [Content-Type, Authorization]
         MaxAge: 300
 Outputs:
+  CognitoUserPoolId:
+    Value: !Ref CognitoUserPool
+  CognitoClientId:
+    Value: !Ref CognitoAppClient
+  CognitoIssuer:
+    Value: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}"
+  CognitoHostedUiBaseUrl:
+    Value: !Sub "https://${CognitoUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com"
   ApiUrl:
     Value: !Sub 'https://${OrdersApi}.execute-api.${AWS::Region}.amazonaws.com'
   OrdersTableName:

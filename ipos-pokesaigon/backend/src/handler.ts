@@ -1,5 +1,6 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
 import { orderService, InvalidOrderTransitionError } from "./services/orderService";
+import { can, principalFromVerifiedGatewayEvent } from "./auth/principal";
 import {
 	validateCreateOrder,
 	validateUpdateStatus,
@@ -65,18 +66,25 @@ export const handler = async (
 		return { statusCode: 204, headers: corsHeaders, body: "" };
 	}
 
-	// Parse path segments, e.g. /orders/ORD-123/status → ['orders', 'ORD-123', 'status']
+	// The API Gateway authorizer is mandatory in SAM. Reject direct invocations without
+  // verified authorizer context too; never trust a user-supplied role header.
+  const principal = principalFromVerifiedGatewayEvent(event);
+  if (!principal) return err(401, "UNAUTHORIZED", "Valid Cognito access token required");
+
+  // Parse path segments, e.g. /orders/ORD-123/status → ['orders', 'ORD-123', 'status']
 	const segments = path.split("/").filter(Boolean);
 
 	try {
 		// ── POST /orders ────────────────────────────────────────────────────────
 		if (method === "POST" && path === "/orders") {
+      if (!can(principal, "order:create")) return err(403, "FORBIDDEN", "Insufficient role");
 			const body = parseBody(event.body);
 			const validationError = validateCreateOrder(body);
 			if (validationError) return err(400, "VALIDATION_ERROR", validationError);
 
 			const order = await orderService.createOrder(
 				body as Parameters<typeof orderService.createOrder>[0],
+        principal.sub,
 			);
 
 			// Optional: publish SNS notification when a new order is created
@@ -95,6 +103,7 @@ export const handler = async (
 
 		// ── GET /orders ─────────────────────────────────────────────────────────
 		if (method === "GET" && path === "/orders") {
+      if (!can(principal, "order:list")) return err(403, "FORBIDDEN", "Staff role required");
 			const qs = event.queryStringParameters ?? {};
 			const orders = await orderService.listOrders({
 				status: qs.status,
@@ -110,6 +119,9 @@ export const handler = async (
 			const order = await orderService.getOrder(orderId);
 			if (!order)
 				return err(404, "ORDER_NOT_FOUND", `Order ${orderId} not found`);
+      if (!can(principal, "order:read-all") && order.ownerSub !== principal.sub) {
+        return err(404, "ORDER_NOT_FOUND", "Order not found");
+      }
 			return ok(200, order);
 		}
 
@@ -120,6 +132,7 @@ export const handler = async (
 			segments[0] === "orders" &&
 			segments[2] === "status"
 		) {
+      if (!can(principal, "order:status")) return err(403, "FORBIDDEN", "Kitchen or manager role required");
 			const orderId = segments[1];
 			const body = parseBody(event.body);
 			const validationError = validateUpdateStatus(body);
@@ -146,6 +159,7 @@ export const handler = async (
 			segments[0] === "orders" &&
 			segments[2] === "payment"
 		) {
+      if (!can(principal, "order:payment")) return err(403, "FORBIDDEN", "Cashier or manager role required");
 			const orderId = segments[1];
 			const body = parseBody(event.body);
 			const validationError = validateUpdatePayment(body);
