@@ -1,5 +1,4 @@
 import { randomUUID } from "crypto";
-import { randomUUID } from "crypto";
 import {
   Order, OrderItem, OrderStatus, CreateOrderRequest, ListOrdersFilter,
 } from "../types/order";
@@ -40,7 +39,7 @@ export function assertPaymentAllowed(order: Pick<Order, "status" | "paymentStatu
   }
 }
 
-export export function generateOrderId(): string {
+export function generateOrderId(): string {
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   return `ORD-${date}-${randomUUID()}`;
 }
@@ -99,9 +98,6 @@ export const orderService = {
     const order = await orderRepository.findById(orderId);
     if (!order) return null;
     assertPaymentAllowed(order);
-    if (order.status !== "READY" || order.paymentStatus !== "UNPAID") {
-      throw new Error(`INVALID_STATUS: Payment requires READY/UNPAID, found ${order.status}/${order.paymentStatus}`);
-    }
     const updated = await orderRepository.markPaid(orderId);
     console.log(JSON.stringify({ event: "ORDER_PAID", orderId, total: order.totalAmount }));
     return updated;
