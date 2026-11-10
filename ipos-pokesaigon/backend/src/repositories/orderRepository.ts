@@ -33,6 +33,7 @@ export const orderRepository = {
 			new PutCommand({
 				TableName: TABLE_NAME,
 				Item: order,
+				ConditionExpression: "attribute_not_exists(orderId)",
 			}),
 		);
 		return order;
@@ -46,6 +47,7 @@ export const orderRepository = {
 			new GetCommand({
 				TableName: TABLE_NAME,
 				Key: { orderId },
+				ConsistentRead: true,
 			}),
 		);
 		return (result.Item as Order) ?? null;
@@ -56,11 +58,16 @@ export const orderRepository = {
 	 * For demo scale this is fine. Production would use GSI + Query.
 	 */
 	async findAll(filters?: ListOrdersFilter): Promise<Order[]> {
-		const result = await docClient.send(
-			new ScanCommand({ TableName: TABLE_NAME }),
-		);
-
-		let items = (result.Items as Order[]) ?? [];
+		const all: Order[] = [];
+    let cursor: Record<string, unknown> | undefined;
+    do {
+      const result = await docClient.send(new ScanCommand({
+        TableName: TABLE_NAME, ExclusiveStartKey: cursor,
+      }));
+      all.push(...((result.Items as Order[]) ?? []));
+      cursor = result.LastEvaluatedKey;
+    } while (cursor);
+    let items = all;
 
 		if (filters?.status) {
 			items = items.filter((item) => item.status === filters.status);
@@ -87,7 +94,8 @@ export const orderRepository = {
 	 */
 	async updateStatus(
 		orderId: string,
-		status: OrderStatus,
+		expectedStatus: OrderStatus,
+    status: OrderStatus,
 	): Promise<Order | null> {
 		const now = new Date().toISOString();
 		try {
@@ -97,14 +105,14 @@ export const orderRepository = {
 					Key: { orderId },
 					UpdateExpression: "SET #status = :status, updatedAt = :updatedAt",
 					ExpressionAttributeNames: { "#status": "status" },
-					ExpressionAttributeValues: { ":status": status, ":updatedAt": now },
-					ConditionExpression: "attribute_exists(orderId)",
+					ExpressionAttributeValues: { ":status": status, ":expected": expectedStatus, ":unpaid": "UNPAID", ":updatedAt": now },
+					ConditionExpression: "attribute_exists(orderId) AND #status = :expected AND paymentStatus = :unpaid",
 					ReturnValues: "ALL_NEW",
 				}),
 			);
 			return (result.Attributes as Order) ?? null;
 		} catch (err) {
-			if (err instanceof ConditionalCheckFailedException) return null;
+			if (err instanceof ConditionalCheckFailedException) throw new Error("ORDER_CONFLICT: Order changed; refresh and retry");
 			throw err;
 		}
 	},
@@ -124,16 +132,18 @@ export const orderRepository = {
 					ExpressionAttributeNames: { "#status": "status" },
 					ExpressionAttributeValues: {
 						":paymentStatus": "PAID",
+						":ready": "READY",
+						":unpaid": "UNPAID",
 						":status": "PAID",
 						":updatedAt": now,
 					},
-					ConditionExpression: "attribute_exists(orderId)",
+					ConditionExpression: "attribute_exists(orderId) AND #status = :ready AND paymentStatus = :unpaid",
 					ReturnValues: "ALL_NEW",
 				}),
 			);
 			return (result.Attributes as Order) ?? null;
 		} catch (err) {
-			if (err instanceof ConditionalCheckFailedException) return null;
+			if (err instanceof ConditionalCheckFailedException) throw new Error("ORDER_CONFLICT: Order changed; refresh and retry");
 			throw err;
 		}
 	},

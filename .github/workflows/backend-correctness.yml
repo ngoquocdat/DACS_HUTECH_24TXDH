@@ -1,0 +1,32 @@
+name: Backend Order Correctness Tests
+
+on:
+  pull_request:
+    paths:
+      - 'ipos-pokesaigon/backend/**'
+      - '.github/workflows/backend-correctness.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ipos-pokesaigon/backend/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ipos-pokesaigon/backend
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: ipos-pokesaigon/backend/package-lock.json
+      - run: npm ci
+      - run: npm test

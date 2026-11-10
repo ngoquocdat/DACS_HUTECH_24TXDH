@@ -1,28 +1,29 @@
 {
-	"name": "ipos-pokesaigon-backend",
-	"version": "1.0.0",
-	"description": "iPOS Pokesaigon — AWS Lambda backend handler",
-	"main": "dist/handler.js",
-	"scripts": {
-		"dev": "ts-node --transpile-only src/local-server.ts",
-		"build": "tsc",
-		"build:watch": "tsc --watch",
-		"package": "npm run build && cd dist && zip -r ../function.zip . && cd .."
-	},
-	"dependencies": {
-		"@aws-sdk/client-dynamodb": "^3.600.0",
-		"@aws-sdk/client-s3": "^3.600.0",
-		"@aws-sdk/client-sns": "^3.600.0",
-		"@aws-sdk/lib-dynamodb": "^3.600.0",
-		"dotenv": "^17.4.2",
-		"uuid": "^9.0.1"
-	},
-	"devDependencies": {
-		"@types/aws-lambda": "^8.10.143",
-		"@types/dotenv": "^6.1.1",
-		"@types/node": "^20.14.0",
-		"@types/uuid": "^9.0.8",
-		"ts-node": "^10.9.2",
-		"typescript": "^5.4.5"
-	}
+  "name": "ipos-pokesaigon-backend",
+  "version": "1.0.0",
+  "description": "iPOS Pokesaigon — AWS Lambda backend handler",
+  "main": "dist/handler.js",
+  "scripts": {
+    "dev": "ts-node --transpile-only src/local-server.ts",
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "package": "npm run build && cd dist && zip -r ../function.zip . && cd ..",
+    "test": "npm run build && node --test test/*.test.cjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/client-sns": "^3.600.0",
+    "@aws-sdk/lib-dynamodb": "^3.600.0",
+    "dotenv": "^17.4.2",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.143",
+    "@types/dotenv": "^6.1.1",
+    "@types/node": "^20.14.0",
+    "@types/uuid": "^9.0.8",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
 }

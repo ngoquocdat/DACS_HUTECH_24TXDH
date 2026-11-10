@@ -1,5 +1,5 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
-import { orderService } from "./services/orderService";
+import { orderService, InvalidOrderTransitionError } from "./services/orderService";
 import {
 	validateCreateOrder,
 	validateUpdateStatus,
@@ -8,7 +8,7 @@ import {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
+const CORS_ORIGIN = process.env.CORS_ORIGIN || "http://localhost:5173";
 
 const corsHeaders: Record<string, string> = {
 	"Content-Type": "application/json",
@@ -167,9 +167,17 @@ export const handler = async (
 		const message = e instanceof Error ? e.message : "Unknown error";
 
 		// Known business logic error
+		if (e instanceof InvalidOrderTransitionError) {
+      return err(409, "INVALID_STATUS", message);
+    }
+
+		if (message.startsWith("ORDER_CONFLICT:")) {
+      return err(409, "ORDER_CONFLICT", "Order changed; refresh and retry");
+    }
+
 		if (message.startsWith("INVALID_STATUS:")) {
 			return err(
-				400,
+				409,
 				"INVALID_STATUS",
 				message.replace("INVALID_STATUS: ", ""),
 			);
