@@ -62,6 +62,43 @@ test("unknown group grants no staff privileges", () => {
   const p = principalFromVerifiedGatewayEvent(event({ groups: ["ADMIN", "CUSTOMER"] }));
   assert.deepEqual(p.roles, ["CUSTOMER"]);
 });
+test("customer can read own order but not another user's order", async () => {
+  const service = require("../dist/services/orderService").orderService;
+  const original = service.getOrder;
+  try {
+    service.getOrder = async () => ({
+      orderId: "ORD-1",
+      ownerSub: "customer-owner",
+      customerPhone: "0900000000",
+      tableNumber: "A1",
+      items: [], status: "PENDING", paymentStatus: "UNPAID", totalAmount: 0,
+      createdAt: "2026-11-10T00:00:00.000Z", updatedAt: "2026-11-10T00:00:00.000Z",
+    });
+    const own = await handler(event({ path: "/orders/ORD-1", sub: "customer-owner" }));
+    const other = await handler(event({ path: "/orders/ORD-1", sub: "customer-other" }));
+    const manager = await handler(event({ path: "/orders/ORD-1", sub: "manager", groups: ["MANAGER"] }));
+    assert.equal(own.statusCode, 200);
+    assert.equal(other.statusCode, 404);
+    assert.equal(manager.statusCode, 200);
+  } finally {
+    service.getOrder = original;
+  }
+});
+test("legacy orders without ownerSub are staff only", async () => {
+  const service = require("../dist/services/orderService").orderService;
+  const original = service.getOrder;
+  try {
+    service.getOrder = async () => ({
+      orderId: "ORD-LEGACY", customerPhone: "0900000000", tableNumber: "A1",
+      items: [], status: "PENDING", paymentStatus: "UNPAID", totalAmount: 0,
+      createdAt: "2026-11-10T00:00:00.000Z", updatedAt: "2026-11-10T00:00:00.000Z",
+    });
+    assert.equal((await handler(event({ path: "/orders/ORD-LEGACY" }))).statusCode, 404);
+    assert.equal((await handler(event({ path: "/orders/ORD-LEGACY", groups: ["CASHIER"] }))).statusCode, 200);
+  } finally {
+    service.getOrder = original;
+  }
+});
 test.after(() => {
   if (previous === undefined) delete process.env.COGNITO_CLIENT_ID;
   else process.env.COGNITO_CLIENT_ID = previous;
