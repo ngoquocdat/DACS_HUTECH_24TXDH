@@ -1,39 +1,130 @@
-name: Thesis UAT Deployment - Security Gated
+name: Deploy Thesis UAT (manual, guarded)
 on:
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
-  preflight:
+  release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     environment: uat
-    timeout-minutes: 5
     permissions:
       contents: read
       id-token: write
+    env:
+      AWS_REGION: us-east-1
+      BOOTSTRAP_STACK: thesis-pokesaigon-uat-bootstrap
+      APP_STACK: thesis-pokesaigon-uat
     steps:
-      - name: Block public deployment until security sign-off
+      - name: Validate explicit deployment approval and settings
         env:
           APPROVED: ${{ vars.UAT_DEPLOY_APPROVED }}
-          EXEC_ROLE: ${{ vars.AWS_CFN_UAT_EXECUTION_ROLE_ARN }}
-          ARTIFACT_BUCKET: ${{ vars.AWS_UAT_ARTIFACT_BUCKET }}
-          FRONTEND_ORIGIN: ${{ vars.UAT_FRONTEND_ORIGIN }}
+          ROLE_ARN: ${{ vars.AWS_UAT_ROLE_ARN }}
         run: |
           if [ "$APPROVED" != "true" ]; then
-            echo "::error::Deployment is intentionally blocked until credential rotation, backend JWT/RBAC, payment/concurrency fixes, CI tests and explicit UAT approval."
+            echo "::error::Deployment disabled. Complete credential rotation, security review, GitHub environment branch restrictions and approval first."
             exit 1
           fi
-          if [ -z "$EXEC_ROLE" ] || [ -z "$ARTIFACT_BUCKET" ] || [[ "$FRONTEND_ORIGIN" != https://* ]]; then
-            echo "::error::Configure UAT execution role, artifact bucket, and exact HTTPS frontend origin."
+          if [[ "$ROLE_ARN" != arn:aws:iam::884028226523:role/* ]]; then
+            echo "::error::AWS_UAT_ROLE_ARN is missing or not in UAT account"
             exit 1
           fi
-      - name: OIDC authentication
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            ipos-pokesaigon/backend/package-lock.json
+            ipos-pokesaigon/frontend/package-lock.json
+      - name: Build and test backend
+        working-directory: ipos-pokesaigon/backend
+        run: npm ci && npm test
+      - name: Build-check frontend
+        working-directory: ipos-pokesaigon/frontend
+        run: npm ci && npm run build
+      - name: Install AWS SAM CLI
+        run: |
+          python3 -m pip install --user --break-system-packages aws-sam-cli
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Authenticate with AWS OIDC
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.AWS_UAT_ROLE_ARN }}
           aws-region: us-east-1
           allowed-account-ids: '884028226523'
-          role-session-name: thesis-uat-preflight
-      - name: Verify AWS identity
-        run: aws sts get-caller-identity
-# Deliberately no SAM deploy step until P0 backend security fixes and reviewed IAM policies are merged.
+          role-session-name: thesis-uat-deploy
+      - name: Fetch bootstrap outputs
+        id: bootstrap
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, subprocess
+          data=json.loads(subprocess.check_output([
+            "aws","cloudformation","describe-stacks","--stack-name","thesis-pokesaigon-uat-bootstrap",
+            "--query","Stacks[0].Outputs","--output","json"],text=True))
+          d={x["OutputKey"]:x["OutputValue"] for x in data}
+          required={"ArtifactBucketName":"artifact","FrontendBucketName":"web","FrontendOrigin":"origin","FrontendDistributionId":"distribution","RuntimeRoleArn":"runtime_role","CloudFormationExecutionRoleArn":"execution_role"}
+          for key,out in required.items():
+            if not d.get(key): raise SystemExit("Missing bootstrap output "+key)
+            print(out+"="+d[key])
+          PY
+      - name: SAM validate and package
+        working-directory: ipos-pokesaigon/infra
+        run: |
+          sam validate --lint --template-file template.yaml
+          sam build --template-file template.yaml
+      - name: Deploy backend and Cognito UAT
+        working-directory: ipos-pokesaigon/infra
+        env:
+          CFN_EXEC_ROLE: ${{ steps.bootstrap.outputs.execution_role }}
+          ARTIFACT_BUCKET: ${{ steps.bootstrap.outputs.artifact }}
+          ORIGIN: ${{ steps.bootstrap.outputs.origin }}
+          RUNTIME_ROLE: ${{ steps.bootstrap.outputs.runtime_role }}
+        run: |
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name thesis-pokesaigon-uat \
+            --region us-east-1 \
+            --s3-bucket "$ARTIFACT_BUCKET" \
+            --role-arn "$CFN_EXEC_ROLE" \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides "Environment=uat" "CorsOrigin=$ORIGIN" "RuntimeRoleArn=$RUNTIME_ROLE" \
+            --no-confirm-changeset --no-fail-on-empty-changeset
+      - name: Get backend/Cognito public configuration
+        id: app
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json,subprocess
+          data=json.loads(subprocess.check_output([
+            "aws","cloudformation","describe-stacks","--stack-name","thesis-pokesaigon-uat",
+            "--query","Stacks[0].Outputs","--output","json"],text=True))
+          d={x["OutputKey"]:x["OutputValue"] for x in data}
+          for key,out in {"ApiUrl":"api","CognitoClientId":"client","CognitoHostedUiBaseUrl":"domain"}.items():
+            if not d.get(key): raise SystemExit("Missing app output "+key)
+            print(out+"="+d[key])
+          PY
+      - name: Build frontend with matching UAT origin and Cognito client
+        working-directory: ipos-pokesaigon/frontend
+        env:
+          VITE_API_BASE_URL: ${{ steps.app.outputs.api }}
+          VITE_COGNITO_CLIENT_ID: ${{ steps.app.outputs.client }}
+          VITE_COGNITO_DOMAIN: ${{ steps.app.outputs.domain }}
+        run: npm run build
+      - name: Upload private frontend and invalidate CloudFront
+        env:
+          WEB_BUCKET: ${{ steps.bootstrap.outputs.web }}
+          DISTRIBUTION: ${{ steps.bootstrap.outputs.distribution }}
+        run: |
+          aws s3 sync ipos-pokesaigon/frontend/dist/ "s3://$WEB_BUCKET/" --delete
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths '/*'
+      - name: Summarize environment endpoints
+        env:
+          ORIGIN: ${{ steps.bootstrap.outputs.origin }}
+          API: ${{ steps.app.outputs.api }}
+        run: |
+          echo "### Thesis UAT deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "Frontend: $ORIGIN" >> "$GITHUB_STEP_SUMMARY"
+          echo "API: $API" >> "$GITHUB_STEP_SUMMARY"
+          echo "Run customer / staff OAuth and permissions smoke tests before release." >> "$GITHUB_STEP_SUMMARY"

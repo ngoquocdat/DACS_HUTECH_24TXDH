@@ -10,11 +10,14 @@ Parameters:
     Type: String
     Description: Exact trusted HTTPS frontend origin
     AllowedPattern: '^https://[^/]+$'
+  RuntimeRoleArn:
+    Type: String
+    Description: ARN of least-privilege Lambda execution role produced by the UAT bootstrap stack.
+    AllowedPattern: '^arn:aws:iam::[0-9]{12}:role/.+$'
   SnsTopicArn:
     Type: String
     Default: ''
 Conditions:
-  HasSnsTopic: !Not [!Equals [!Ref SnsTopicArn, '']]
   IsProduction: !Equals [!Ref Environment, prod]
 Globals:
   Function:
@@ -105,18 +108,8 @@ Resources:
       FunctionName: !Sub 'pokesaigon-api-${Environment}'
       CodeUri: ../backend/
       Handler: dist/handler.handler
-      Policies:
-        - Statement:
-            - Effect: Allow
-              Action: [dynamodb:PutItem, dynamodb:GetItem, dynamodb:UpdateItem, dynamodb:Scan, dynamodb:Query]
-              Resource: !GetAtt OrdersTable.Arn
-        - !If
-          - HasSnsTopic
-          - Statement:
-              - Effect: Allow
-                Action: sns:Publish
-                Resource: !Ref SnsTopicArn
-          - !Ref AWS::NoValue
+      Description: JWT-protected orders API - UAT or Production
+      Role: !Ref RuntimeRoleArn
       Events:
         ApiProxy:
           Type: HttpApi

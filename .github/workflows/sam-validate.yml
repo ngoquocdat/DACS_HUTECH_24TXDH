@@ -24,4 +24,6 @@ jobs:
           python3 -m pip install --user --break-system-packages aws-sam-cli
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Validate SAM template syntax and resource schema
-        run: sam validate --lint --template-file ipos-pokesaigon/infra/template.yaml
+        run: |
+          sam validate --lint --template-file ipos-pokesaigon/infra/template.yaml
+          sam validate --lint --template-file ipos-pokesaigon/infra/bootstrap-uat.yaml
