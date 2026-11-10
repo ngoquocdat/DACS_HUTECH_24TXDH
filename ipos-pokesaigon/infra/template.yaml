@@ -44,7 +44,7 @@ Resources:
           RequireNumbers: true
           RequireSymbols: true
       UserPoolAddOns:
-        AdvancedSecurityMode: OFF
+        AdvancedSecurityMode: 'OFF'
   CognitoAppClient:
     Type: AWS::Cognito::UserPoolClient
     Properties:
