@@ -18,7 +18,6 @@ Parameters:
     Type: String
     Default: ''
 Conditions:
-  HasSnsTopic: !Not [!Equals [!Ref SnsTopicArn, '']]
   IsProduction: !Equals [!Ref Environment, prod]
 Globals:
   Function:
