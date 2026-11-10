@@ -13,7 +13,10 @@ Parameters:
   RuntimeRoleArn:
     Type: String
     Description: ARN of least-privilege Lambda execution role produced by the UAT bootstrap stack.
-    AllowedPattern: '^arn:aws:iam::[0-9]{12}:role/.+
+    AllowedPattern: '^arn:aws:iam::[0-9]{12}:role/.+$'
+  SnsTopicArn:
+    Type: String
+    Default: ''
 Conditions:
   HasSnsTopic: !Not [!Equals [!Ref SnsTopicArn, '']]
   IsProduction: !Equals [!Ref Environment, prod]
