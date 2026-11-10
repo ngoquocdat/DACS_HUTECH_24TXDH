@@ -4,6 +4,7 @@ import type {	CreateOrderRequest,
 	ListOrdersResponse,
 	OrderStatus,
 } from "../types/order";
+import { accessToken } from "../auth/cognito";
 
 // Vite exposes env vars via import.meta.env.VITE_*
 // Set VITE_API_BASE_URL in frontend/.env (copy from .env.example)
@@ -12,10 +13,12 @@ const BASE_URL =
 	"http://localhost:3000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-	const response = await fetch(`${BASE_URL}${path}`, {
-		headers: { "Content-Type": "application/json" },
-		...init,
-	});
+	const token = accessToken();
+  if (!token) throw new Error("Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.");
+  const response = await fetch(`${BASE_URL}${path}`, {
+    ...init,
+    headers: { ...init?.headers, "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+  });
 
 	const data = await response.json();
 
