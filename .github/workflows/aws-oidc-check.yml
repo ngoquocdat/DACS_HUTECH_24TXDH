@@ -1,0 +1,40 @@
+name: Verify AWS OIDC Connection
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-aws:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Validate AWS UAT role configuration
+        env:
+          AWS_UAT_ROLE_ARN: ${{ vars.AWS_UAT_ROLE_ARN }}
+        run: |
+          if [ -z "$AWS_UAT_ROLE_ARN" ]; then
+            echo "::error::Missing AWS_UAT_ROLE_ARN. Add it in Settings > Secrets and variables > Actions > Variables (repository scope)."
+            exit 1
+          fi
+          if [[ ! "$AWS_UAT_ROLE_ARN" =~ ^arn:aws:iam::884028226523:role/ ]]; then
+            echo "::error::AWS_UAT_ROLE_ARN must point to an IAM role in the intended UAT AWS account."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # pinned v4
+        with:
+          role-to-assume: ${{ vars.AWS_UAT_ROLE_ARN }}
+          aws-region: us-east-1
+          allowed-account-ids: '884028226523'
+          role-session-name: hutech-oidc-test
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
