@@ -1,0 +1,27 @@
+name: Validate AWS SAM template
+on:
+  pull_request:
+    paths:
+      - 'ipos-pokesaigon/infra/**'
+      - '.github/workflows/sam-validate.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ipos-pokesaigon/infra/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install AWS SAM CLI
+        run: |
+          python3 -m pip install --user --break-system-packages aws-sam-cli
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Validate SAM template syntax and resource schema
+        run: sam validate --lint --template-file ipos-pokesaigon/infra/template.yaml
