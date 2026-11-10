@@ -14,7 +14,7 @@ export function validateCreateOrder(body: unknown): string | null {
   }
   const digits = req.customerPhone.replace(/\D/g, "");
   if (digits.length < 9 || digits.length > 11) return "customerPhone must be 9-11 digits";
-  if (!Array.isArray(req.items) || req.items.length === 0 || req.items.length > 30) {
+  if (!Array.isArray(req.items) || req.items.length === 0 || req.items.length > 30 || req.items.length > 30) {
     return "items must contain 1-30 entries";
   }
   for (let i = 0; i < req.items.length; i++) {
@@ -32,7 +32,7 @@ export function validateCreateOrder(body: unknown): string | null {
       return `items[${i}].drink must be a valid menu option`;
     }
     if (item.quantity !== undefined &&
-      (typeof item.quantity !== "number" || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 30)) {
+      (typeof item.quantity !== "number" || !Number.isInteger(item.quantity) || (item.quantity < 1 || item.quantity > 30) || item.quantity > 30)) {
       return `items[${i}].quantity must be between 1 and 30`;
     }
     if (item.note !== undefined && (typeof item.note !== "string" || item.note.length > 500)) {
