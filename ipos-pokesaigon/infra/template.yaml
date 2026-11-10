@@ -1,155 +1,90 @@
-AWSTemplateFormatVersion: "2010-09-09"
+AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: >
-  iPOS Pokesaigon — Serverless order management application. Stack: API Gateway
-  HTTP API + Lambda + DynamoDB. Optional: SNS notification, S3 receipt export.
-
-# ─── Globals ────────────────────────────────────────────────────────────────
+Description: iPOS Pokesaigon thesis UAT/prod infrastructure baseline (requires authentication before public release)
+Parameters:
+  Environment:
+    Type: String
+    Default: uat
+    AllowedValues: [uat, prod]
+  CorsOrigin:
+    Type: String
+    Description: Exact trusted HTTPS frontend origin
+    AllowedPattern: '^https://[^/]+$'
+  SnsTopicArn:
+    Type: String
+    Default: ''
+Conditions:
+  HasSnsTopic: !Not [!Equals [!Ref SnsTopicArn, '']]
+  IsProduction: !Equals [!Ref Environment, prod]
 Globals:
   Function:
+    Runtime: nodejs24.x
     Timeout: 30
     MemorySize: 256
-    Runtime: nodejs20.x
-    Architectures: [x86_64]
     Environment:
       Variables:
         DYNAMODB_TABLE_NAME: !Ref OrdersTable
-        AWS_NODEJS_CONNECTION_REUSE_ENABLED: "1"
-        # CORS_ORIGIN is set via parameter below
         CORS_ORIGIN: !Ref CorsOrigin
-        # Optional SNS topic ARN — leave empty to disable
         SNS_NEW_ORDER_TOPIC_ARN: !Ref SnsTopicArn
-
-# ─── Parameters ──────────────────────────────────────────────────────────────
-Parameters:
-  CorsOrigin:
-    Type: String
-    Default: "*"
-    Description: >
-      Allowed CORS origin for Lambda responses. Use * for development. Set to
-      your frontend URL for production. Example:
-      https://your-bucket.s3-website-ap-southeast-1.amazonaws.com
-
-  SnsTopicArn:
-    Type: String
-    Default: ""
-    Description: >
-      (Optional) ARN of an SNS topic to publish kitchen notifications. Leave
-      empty to disable. Create the topic manually and subscribe a kitchen email
-      address before entering the ARN here.
-
-# ─── Resources ───────────────────────────────────────────────────────────────
 Resources:
-  # ── DynamoDB table ──────────────────────────────────────────────────────────
   OrdersTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
-      TableName: PokesaigonOrders
-      BillingMode: PAY_PER_REQUEST # No provisioned capacity cost for demo
+      TableName: !Sub 'pokesaigon-orders-${Environment}'
+      BillingMode: PAY_PER_REQUEST
       PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: false # Keep disabled for free tier demo
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
       AttributeDefinitions:
         - AttributeName: orderId
           AttributeType: S
       KeySchema:
         - AttributeName: orderId
           KeyType: HASH
-      # Production improvement: add GSIs for querying by tableNumber, status, customerPhone
-      # (Omitted here to keep demo simple — scan is fine for small data)
-      Tags:
-        - Key: Project
-          Value: iPOS-Pokesaigon
-
-  # ── Lambda function ─────────────────────────────────────────────────────────
   OrderApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: ipos-order-api-handler
-      Description: iPOS Pokesaigon — handles all order API routes
+      FunctionName: !Sub 'pokesaigon-api-${Environment}'
       CodeUri: ../backend/
       Handler: dist/handler.handler
       Policies:
-        # Minimal DynamoDB permissions scoped to the orders table
         - Statement:
             - Effect: Allow
-              Action:
-                - dynamodb:PutItem
-                - dynamodb:GetItem
-                - dynamodb:UpdateItem
-                - dynamodb:Scan
-                - dynamodb:Query
-              Resource:
-                - !GetAtt OrdersTable.Arn
-        # Optional SNS publish permission (only used when SNS_NEW_ORDER_TOPIC_ARN is set)
-        - Statement:
-            - Effect: Allow
-              Action:
-                - sns:Publish
-              Resource: "*"
+              Action: [dynamodb:PutItem, dynamodb:GetItem, dynamodb:UpdateItem, dynamodb:Scan, dynamodb:Query]
+              Resource: !GetAtt OrdersTable.Arn
+        - !If
+          - HasSnsTopic
+          - Statement:
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref SnsTopicArn
+          - !Ref AWS::NoValue
       Events:
-        # Catch-all route — API Gateway forwards all methods/paths to this Lambda
         ApiProxy:
           Type: HttpApi
           Properties:
             Path: /{proxy+}
             Method: ANY
             ApiId: !Ref OrdersApi
-        # Also handle requests to root /
         ApiRoot:
           Type: HttpApi
           Properties:
             Path: /
             Method: ANY
             ApiId: !Ref OrdersApi
-      Tags:
-        Project: iPOS-Pokesaigon
-
-  # ── API Gateway HTTP API ─────────────────────────────────────────────────────
   OrdersApi:
     Type: AWS::Serverless::HttpApi
     Properties:
-      Description: iPOS Pokesaigon REST API
       CorsConfiguration:
-        AllowOrigins:
-          - !Ref CorsOrigin
-        AllowMethods:
-          - GET
-          - POST
-          - PATCH
-          - OPTIONS
-        AllowHeaders:
-          - Content-Type
-          - Authorization
+        AllowOrigins: [!Ref CorsOrigin]
+        AllowMethods: [GET, POST, PATCH, OPTIONS]
+        AllowHeaders: [Content-Type, Authorization]
         MaxAge: 300
-      Tags:
-        Project: iPOS-Pokesaigon
-
-# ─── Outputs ─────────────────────────────────────────────────────────────────
 Outputs:
   ApiUrl:
-    Description: >
-      API Gateway HTTP API base URL. Copy this value into:
-        - backend/.env  →  API_BASE_URL
-        - frontend/.env →  VITE_API_BASE_URL
-        - aws.config    →  API_BASE_URL
-    Value: !Sub "https://${OrdersApi}.execute-api.${AWS::Region}.amazonaws.com"
-
+    Value: !Sub 'https://${OrdersApi}.execute-api.${AWS::Region}.amazonaws.com'
   OrdersTableName:
-    Description: DynamoDB table name
     Value: !Ref OrdersTable
-
-  OrdersTableArn:
-    Description: DynamoDB table ARN
-    Value: !GetAtt OrdersTable.Arn
-
-  LambdaFunctionName:
-    Description: Lambda function name
-    Value: !Ref OrderApiFunction
-
   LambdaFunctionArn:
-    Description: Lambda function ARN
     Value: !GetAtt OrderApiFunction.Arn
-
-  CloudWatchLogGroup:
-    Description: CloudWatch log group for Lambda logs
-    Value: !Sub "/aws/lambda/${OrderApiFunction}"
