@@ -9,7 +9,10 @@ export interface Principal {
 // API Gateway's JWT authorizer verifies JWT signature, issuer, expiry and app-client audience.
 // Never parse an Authorization header as trustworthy claims inside this Lambda.
 export function principalFromVerifiedGatewayEvent(event: APIGatewayProxyEventV2): Principal | null {
-  const claims = event.requestContext.authorizer?.jwt?.claims;
+  const context = event.requestContext as typeof event.requestContext & {
+    authorizer?: { jwt?: { claims?: Record<string, unknown> } };
+  };
+  const claims = context.authorizer?.jwt?.claims;
   const configuredClientId = process.env.COGNITO_CLIENT_ID;
   if (!claims || !configuredClientId) return null;
   if (claims.token_use !== "access" || claims.client_id !== configuredClientId) return null;
