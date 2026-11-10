@@ -19,6 +19,7 @@ export interface OrderItem {
 
 export interface Order {
 	orderId: string;
+  ownerSub?: string; // legacy orders have no owner and remain staff-only
 	tableNumber: string;
 	customerPhone: string;
 	items: OrderItem[];
