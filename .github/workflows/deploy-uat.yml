@@ -1,0 +1,39 @@
+name: Thesis UAT Deployment - Security Gated
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    environment: uat
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Block public deployment until security sign-off
+        env:
+          APPROVED: ${{ vars.UAT_DEPLOY_APPROVED }}
+          EXEC_ROLE: ${{ vars.AWS_CFN_UAT_EXECUTION_ROLE_ARN }}
+          ARTIFACT_BUCKET: ${{ vars.AWS_UAT_ARTIFACT_BUCKET }}
+          FRONTEND_ORIGIN: ${{ vars.UAT_FRONTEND_ORIGIN }}
+        run: |
+          if [ "$APPROVED" != "true" ]; then
+            echo "::error::Deployment is intentionally blocked until credential rotation, backend JWT/RBAC, payment/concurrency fixes, CI tests and explicit UAT approval."
+            exit 1
+          fi
+          if [ -z "$EXEC_ROLE" ] || [ -z "$ARTIFACT_BUCKET" ] || [[ "$FRONTEND_ORIGIN" != https://* ]]; then
+            echo "::error::Configure UAT execution role, artifact bucket, and exact HTTPS frontend origin."
+            exit 1
+          fi
+      - name: OIDC authentication
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_UAT_ROLE_ARN }}
+          aws-region: us-east-1
+          allowed-account-ids: '884028226523'
+          role-session-name: thesis-uat-preflight
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+# Deliberately no SAM deploy step until P0 backend security fixes and reviewed IAM policies are merged.
