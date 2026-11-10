@@ -10,6 +10,149 @@ Parameters:
     Type: String
     Description: Exact trusted HTTPS frontend origin
     AllowedPattern: '^https://[^/]+$'
+  RuntimeRoleArn:
+    Type: String
+    Description: ARN of least-privilege Lambda execution role produced by the UAT bootstrap stack.
+    AllowedPattern: '^arn:aws:iam::[0-9]{12}:role/.+
+Conditions:
+  HasSnsTopic: !Not [!Equals [!Ref SnsTopicArn, '']]
+  IsProduction: !Equals [!Ref Environment, prod]
+Globals:
+  Function:
+    Runtime: nodejs24.x
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        DYNAMODB_TABLE_NAME: !Ref OrdersTable
+        CORS_ORIGIN: !Ref CorsOrigin
+        SNS_NEW_ORDER_TOPIC_ARN: !Ref SnsTopicArn
+        COGNITO_CLIENT_ID: !Ref CognitoAppClient
+Resources:
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub 'pokesaigon-users-${Environment}'
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      UserPoolAddOns:
+        AdvancedSecurityMode: 'OFF'
+  CognitoAppClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub 'pokesaigon-web-${Environment}'
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      AllowedOAuthFlowsUserPoolClient: true
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs: [!Sub '${CorsOrigin}/auth/callback']
+      LogoutURLs: [!Ref CorsOrigin]
+      ExplicitAuthFlows: [ALLOW_REFRESH_TOKEN_AUTH]
+      AccessTokenValidity: 60
+      TokenValidityUnits:
+        AccessToken: minutes
+  CognitoUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub 'thesis-pokesaigon-${Environment}-${AWS::AccountId}'
+      UserPoolId: !Ref CognitoUserPool
+  KitchenGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: KITCHEN
+      UserPoolId: !Ref CognitoUserPool
+      Description: Kitchen operators; can change order preparation status
+  CashierGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: CASHIER
+      UserPoolId: !Ref CognitoUserPool
+      Description: Cashiers; can confirm READY order payment
+  ManagerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: MANAGER
+      UserPoolId: !Ref CognitoUserPool
+      Description: Managers; can perform staff functions
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub 'pokesaigon-orders-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      AttributeDefinitions:
+        - AttributeName: orderId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: orderId
+          KeyType: HASH
+  OrderApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'pokesaigon-api-${Environment}'
+      CodeUri: ../backend/
+      Handler: dist/handler.handler
+      Description: JWT-protected orders API - UAT or Production
+      Role: !Ref RuntimeRoleArn
+      Events:
+        ApiProxy:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+            ApiId: !Ref OrdersApi
+        ApiRoot:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: ANY
+            ApiId: !Ref OrdersApi
+  OrdersApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Auth:
+        DefaultAuthorizer: CognitoJwtAuthorizer
+        Authorizers:
+          CognitoJwtAuthorizer:
+            IdentitySource: "$request.header.Authorization"
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}"
+              audience: [!Ref CognitoAppClient]
+      CorsConfiguration:
+        AllowOrigins: [!Ref CorsOrigin]
+        AllowMethods: [GET, POST, PATCH, OPTIONS]
+        AllowHeaders: [Content-Type, Authorization]
+        MaxAge: 300
+Outputs:
+  CognitoUserPoolId:
+    Value: !Ref CognitoUserPool
+  CognitoClientId:
+    Value: !Ref CognitoAppClient
+  CognitoIssuer:
+    Value: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}"
+  CognitoHostedUiBaseUrl:
+    Value: !Sub "https://${CognitoUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com"
+  ApiUrl:
+    Value: !Sub 'https://${OrdersApi}.execute-api.${AWS::Region}.amazonaws.com'
+  OrdersTableName:
+    Value: !Ref OrdersTable
+  LambdaFunctionArn:
+    Value: !GetAtt OrderApiFunction.Arn
+
   SnsTopicArn:
     Type: String
     Default: ''
