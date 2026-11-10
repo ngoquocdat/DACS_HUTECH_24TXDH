@@ -1,0 +1,47 @@
+name: Verify Thesis UAT OIDC (no deployment)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-uat-role:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: uat
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Validate the configured role without displaying secrets
+        env:
+          AWS_UAT_ROLE_ARN: ${{ vars.AWS_UAT_ROLE_ARN }}
+        run: |
+          if [ -z "$AWS_UAT_ROLE_ARN" ]; then
+            echo "::error::Missing AWS_UAT_ROLE_ARN in GitHub repository or UAT environment variables."
+            exit 1
+          fi
+          if [[ ! "$AWS_UAT_ROLE_ARN" =~ ^arn:aws:iam::884028226523:role/ ]]; then
+            echo "::error::AWS_UAT_ROLE_ARN must be in account 884028226523."
+            exit 1
+          fi
+          echo "GitHub environment UAT and role ARN configuration recognized."
+      - name: Assume AWS UAT IAM role using GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_UAT_ROLE_ARN }}
+          aws-region: us-east-1
+          allowed-account-ids: '884028226523'
+          role-session-name: thesis-uat-oidc-preflight
+      - name: Assert exact AWS account identity (no AWS modifications)
+        run: |
+          ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+          if [ "$ACCOUNT" != "884028226523" ]; then
+            echo "::error::Unexpected AWS account identity."
+            exit 1
+          fi
+          echo "AWS UAT OIDC authenticated successfully for account $ACCOUNT."
+          echo "No infrastructure created. CloudFormation bootstrap requires a separate IAM review and approval."
